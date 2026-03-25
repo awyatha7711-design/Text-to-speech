@@ -81,8 +81,8 @@ MESSAGES = {
     },
     'my': {
         'select_lang_prompt': "သင်နှစ်သက်သော ဘာသာစကားကို ရွေးချယ်ပါ။",
-        'join_channel_prompt': "Bot ၏ ဝန်ဆောင်မှုများကို အသုံးပြုရန် ကျွန်ုပ်တို့၏ Official Channel သို့ ဝင်ရောက်ရပါမည်။",
-        'join_channel_button': "📢 Official Channel သို့ဝင်ရောက်ရန်",
+        'join_channel_prompt': "Bot ၏ ဝန်ဆောင်မှုများကို အသုံးပြုရန် ကျွန်ုပ်တို့၏ Official Channel ကို joinထားရပါမည်။",
+        'join_channel_button': "📢 Official Channel ကို Joinရန်",
         'joined_button': "✅ ဝင်ရောက်ပြီးပါပြီ",
         'not_joined_alert': "Channel ကို မဝင်ရသေးပါ။ ကျေးဇူးပြု၍ Channel သို့ဝင်ရောက်ပြီး ထပ်မံကြိုးစားပါ။",
         'welcome_message': "ကြိုဆိုပါတယ်။ သင်အသံပြောင်းလိုသော စာသားကို ပေးပို့နိုင်ပါပြီ။",
