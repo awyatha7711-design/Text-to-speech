@@ -4,22 +4,23 @@ import logging
 from flask import Flask
 from threading import Thread
 import edge_tts
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 
-# Logging
+# Logging Setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# Flask for Render (Port 10000)
+# Flask Server for Render (Port 10000)
 app = Flask('')
 @app.route('/')
-def home(): return "Bot is Alive"
+def home(): return "Bot is Online"
 def run(): app.run(host='0.0.0.0', port=10000)
 
 # --- CONFIGURATION ---
+# Render Environment Variables ထဲမှာ BOT_TOKEN ကို ထည့်ထားပေးပါ
 TOKEN = os.getenv("BOT_TOKEN")
-# မင်းရဲ့ Channel Username ကို ဒီအောက်မှာ သေချာပေါက် ပြောင်းပေးပါ (ဥပမာ "@my_channel")
-CHANNEL_ID = "@reeac_99" 
+# မင်းရဲ့ Channel နာမည်ကို ဒီအောက်မှာ အမှန်ပြင်ပါ (ဥပမာ "@mychannel")
+CHANNEL_ID = "@your_channel_username" 
 # ---------------------
 
 LANG, AUTH, TEXT, VOICE = range(4)
@@ -52,9 +53,9 @@ VOICES = {
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("မြန်မာစာ", callback_data='mm'),
-                 InlineKeyboardButton("English", callback_data='en')]]
-    await update.message.reply_text("Select Language / ဘာသာစကားရွေးချယ်ပါ-", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("မြန်မာစာ 🇲🇲", callback_data='mm'),
+                 InlineKeyboardButton("English 🇺🇸", callback_data='en')]]
+    await update.message.reply_text("Please select your language / ဘာသာစကားရွေးချယ်ပါ-", reply_markup=InlineKeyboardMarkup(keyboard))
     return LANG
 
 async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,25 +67,26 @@ async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ['member', 'administrator', 'creator']:
-            await query.edit_message_text("✅ Verified! Please send the text to convert.")
+            await query.edit_message_text("✅ Verified! Please send the text you want to convert.")
             return TEXT
         else: raise Exception()
     except:
-        keyboard = [[InlineKeyboardButton("Join Channel", url=f"https://t.me/{CHANNEL_ID.replace('@','')}")],
-                    [InlineKeyboardButton("Joined", callback_data='check_join')]]
-        await query.edit_message_text(f"Join {CHANNEL_ID} to use this bot.", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_ID.replace('@','')}")],
+                    [InlineKeyboardButton("✅ Joined (အတည်ပြုမည်)", callback_data='check_join')]]
+        await query.edit_message_text(f"You must join our channel {CHANNEL_ID} first!", reply_markup=InlineKeyboardMarkup(keyboard))
         return AUTH
 
 async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
     user_id = query.from_user.id
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ['member', 'administrator', 'creator']:
-            await query.edit_message_text("✅ Success! Send the text now.")
+            await query.edit_message_text("🎉 Verified Successfully! Send your text now.")
             return TEXT
         else:
-            await query.answer("Join first!", show_alert=True)
+            await query.answer("❌ You haven't joined yet!", show_alert=True)
             return AUTH
     except: return AUTH
 
@@ -97,7 +99,8 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         row = [InlineKeyboardButton(v_keys[i], callback_data=v_keys[i])]
         if i+1 < len(v_keys): row.append(InlineKeyboardButton(v_keys[i+1], callback_data=v_keys[i+1]))
         buttons.append(row)
-    await update.message.reply_text("Select Voice Character:", reply_markup=InlineKeyboardMarkup(buttons))
+    
+    await update.message.reply_text("👤 Select Voice Character:", reply_markup=InlineKeyboardMarkup(buttons))
     return VOICE
 
 async def generate_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,22 +111,27 @@ async def generate_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = context.user_data.get('text')
     v_id = VOICES[lang][v_name]
     
-    status_msg = await query.edit_message_text(f"⏳ Generating audio with {v_name}...")
-    file_path = f"tts_{query.from_user.id}.mp3"
+    msg = await query.edit_message_text(f"⏳ Generating audio with {v_name}...")
+    file_path = f"audio_{query.from_user.id}.mp3"
+    
     try:
-        comm = edge_tts.Communicate(text, v_id)
-        await comm.save(file_path)
-        await context.bot.send_audio(chat_id=query.message.chat_id, audio=open(file_path, 'rb'), caption=f"Voice: {v_name}")
-        await status_msg.delete()
+        communicate = edge_tts.Communicate(text, v_id)
+        await communicate.save(file_path)
+        await context.bot.send_audio(chat_id=query.message.chat_id, audio=open(file_path, 'rb'), caption=f"🎙 Voice: {v_name}")
+        await msg.delete()
         os.remove(file_path)
-    except: await query.edit_message_text("❌ Error generating audio.")
+    except Exception as e:
+        logging.error(f"TTS Error: {e}")
+        await query.edit_message_text("❌ Error generating audio. Please try again.")
+    
     return TEXT
 
 def main():
     Thread(target=run).start()
-    app_tg = Application.builder().token(TOKEN).build()
+    # drop_pending_updates=True က Conflict Error တွေကို ရှင်းပေးပါလိမ့်မယ်
+    application = Application.builder().token(TOKEN).build()
     
-    conv = ConversationHandler(
+    conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             LANG: [CallbackQueryHandler(lang_choice, pattern='^(mm|en)$')],
@@ -133,8 +141,9 @@ def main():
         },
         fallbacks=[CommandHandler('start', start)]
     )
-    app_tg.add_handler(conv)
-    app_tg.run_polling(drop_pending_updates=True) # Conflict ဖြစ်တာကို ရှင်းပေးပါလိမ့်မယ်
+    
+    application.add_handler(conv_handler)
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
