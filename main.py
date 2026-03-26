@@ -84,11 +84,17 @@ async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Generation Config ကို စနစ်တကျ ပြန်ဖွဲ့စည်းထားခြင်း
         response = model.generate_content(
             contents=text,
             generation_config={
                 "response_mime_type": "audio/mp3",
-                "speech_config": {"voice_config": {"prebuilt_voice_id": voice_id}}
+                "speech_config": {
+                    "voice_config": {
+                        "prebuilt_voice_id": voice_id
+                    }
+                }
             }
         )
 
@@ -99,9 +105,9 @@ async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_T
             await query.message.reply_audio(audio=audio_file, caption=f"🎙 Gemini Voice: {voice_display_name}")
             await msg.delete()
         else:
-            await query.edit_message_text("Error: Gemini API မှ အသံဒေတာ မရရှိပါ။ (Quota ပြည့်နေခြင်း သို့မဟုတ် Region ကန့်သတ်ချက် ဖြစ်နိုင်သည်)")
+            await query.edit_message_text("Error: Gemini API ကနေ အသံဒေတာ မရရှိပါဘူး။")
     except Exception as e:
-        await query.edit_message_text(f"Error: {str(e)}")
+        await query.edit_message_text(f"Error: {str(e)}\n\n(Render မှာ Clear Build Cache & Deploy လုပ်ထားဖို့ လိုပါမယ်)")
     
     return GET_TEXT
 
