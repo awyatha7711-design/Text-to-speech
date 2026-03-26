@@ -8,8 +8,7 @@ import edge_tts
 
 # --- CONFIGURATION ---
 TOKEN = os.getenv("BOT_TOKEN")
-# မင်းရဲ့ Channel ID ကို @ နဲ့ သေချာထည့်ပါ (ဥပမာ "@mychannel")
-CHANNEL_ID = "@reeac_99" 
+CHANNEL_ID = "@reeac_99" # မင်းရဲ့ Channel ID
 
 # Flask Server for Render
 app = Flask('')
@@ -20,18 +19,26 @@ def run(): app.run(host='0.0.0.0', port=10000)
 # Conversation States
 JOIN_CHECK, GET_TEXT, SELECT_VOICE = range(3)
 
-# Voices Mapping (Thiha, Nilar - MM / Zaw Zaw, Su Su - EN/Multi)
+# Creator တွေ အသုံးများတဲ့ အသံ ၁၀ မျိုး (Female 4, Male 6)
 VOICES = {
-    "Thiha (Male)": "my-MM-ThihaNeural",
-    "Nilar (Female)": "my-MM-NilarNeural",
-    "Zaw Zaw (Male)": "en-US-GuyNeural",
-    "Su Su (Female)": "en-US-EmmaNeural"
+    # --- Female Voices (၄ သံ) ---
+    "Nilar (MM-Female)": "my-MM-NilarNeural",
+    "Ava (EN-Female)": "en-US-AvaNeural",
+    "Emma (EN-Female)": "en-US-EmmaNeural",
+    "Sonia (EN-Female)": "en-GB-SoniaNeural",
+    
+    # --- Male Voices (၆ သံ) ---
+    "Thiha (MM-Male)": "my-MM-ThihaNeural",
+    "Guy (EN-Male)": "en-US-GuyNeural",
+    "Andrew (EN-Male)": "en-US-AndrewNeural",
+    "Brian (EN-Male)": "en-US-BrianNeural",
+    "Ryan (EN-Male)": "en-GB-RyanNeural",
+    "Alfie (EN-Male)": "en-GB-AlfieNeural"
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     try:
-        # Check Channel Membership
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ['left', 'kicked']:
             keyboard = [[InlineKeyboardButton("Join Channel", url=f"https://t.me/{CHANNEL_ID.replace('@','')}")],
@@ -42,7 +49,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("မင်္ဂလာပါ! အသံပြောင်းလိုသော စာသားကို ရိုက်ထည့်ပေးပါ။")
         return GET_TEXT
     except Exception:
-        await update.message.reply_text(f"Error: {CHANNEL_ID} မှာ Bot ကို Admin ခန့်ထားဖို့ လိုအပ်ပါတယ်။")
+        await update.message.reply_text("Error: Channel ID မှားနေပါသလား သို့မဟုတ် Bot ကို Admin မခန့်ရသေးပါ။")
         return ConversationHandler.END
 
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -50,20 +57,30 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = query.from_user.id
     await query.answer()
     
-    member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-    if member.status not in ['left', 'kicked']:
-        # Join ပြီးတာနဲ့ စာကို ဖျက်ပေးမယ်
-        await query.message.delete()
-        await context.bot.send_message(chat_id=user_id, text="ကျေးဇူးတင်ပါတယ်။ အခု အသံပြောင်းလိုတဲ့ စာသားကို ရိုက်ထည့်နိုင်ပါပြီ။")
-        return GET_TEXT
-    else:
-        await query.message.reply_text("Join မလုပ်ရသေးပါ။ ကျေးဇူးပြု၍ အရင် Join ပါ။")
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        if member.status not in ['left', 'kicked']:
+            await query.message.delete() # Join ပြီးတာနဲ့ စာဟောင်းဖျက်မယ်
+            await context.bot.send_message(chat_id=user_id, text="ကျေးဇူးတင်ပါတယ်။ အခု အသံပြောင်းလိုတဲ့ စာသားကို ရိုက်ထည့်ပါ။")
+            return GET_TEXT
+        else:
+            await query.message.reply_text("Join မလုပ်ရသေးပါ။ ကျေးဇူးပြု၍ အရင် Join ပါ။")
+            return JOIN_CHECK
+    except:
         return JOIN_CHECK
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['text_to_convert'] = update.message.text
-    keyboard = [[InlineKeyboardButton(name, callback_data=name)] for name in VOICES.keys()]
-    await update.message.reply_text("အသုံးပြုလိုသော အသံကို ရွေးချယ်ပေးပါ -", reply_markup=InlineKeyboardMarkup(keyboard))
+    # Button တွေကို ၂ ခုတစ်တွဲစီ ပြပေးမယ်
+    keyboard = []
+    v_keys = list(VOICES.keys())
+    for i in range(0, len(v_keys), 2):
+        row = [InlineKeyboardButton(v_keys[i], callback_data=v_keys[i])]
+        if i+1 < len(v_keys):
+            row.append(InlineKeyboardButton(v_keys[i+1], callback_data=v_keys[i+1]))
+        keyboard.append(row)
+        
+    await update.message.reply_text("အသုံးပြုလိုသော အသံကို ရွေးချယ်ပေးပါ (Female 4 / Male 6) -", reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECT_VOICE
 
 async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,20 +89,20 @@ async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_T
     text = context.user_data.get('text_to_convert')
     await query.answer()
     
-    msg = await query.edit_message_text("အသံဖိုင် ပြောင်းလဲနေပါသည်... ခဏစောင့်ပါ။")
+    msg = await query.edit_message_text(f"⏳ {voice_name} အသံဖြင့် ပြောင်းလဲနေပါသည်...")
     
     try:
         output_file = f"voice_{query.from_user.id}.mp3"
         communicate = edge_tts.Communicate(text, VOICES[voice_name])
         await communicate.save(output_file)
         
-        await query.message.reply_audio(audio=open(output_file, 'rb'), caption=f"Generated by {voice_name}")
+        await query.message.reply_audio(audio=open(output_file, 'rb'), caption=f"🎙 Voice: {voice_name}")
         await msg.delete()
         os.remove(output_file)
     except Exception as e:
         await query.edit_message_text(f"Error: {str(e)}")
     
-    return GET_TEXT # နောက်ထပ်စာသား ထပ်ရိုက်နိုင်အောင် ပြန်ထားပေးမယ်
+    return GET_TEXT
 
 def main():
     Thread(target=run).start()
@@ -102,7 +119,8 @@ def main():
     )
 
     application.add_handler(conv_handler)
-    application.run_polling(drop_pending_updates=True) # Conflict မဖြစ်အောင် စာဟောင်းတွေကို ဖျက်ခိုင်းမယ်
+    # drop_pending_updates က Conflict ဖြစ်နေတဲ့ စာဟောင်းတွေကို အကုန်ရှင်းပေးမယ်
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
