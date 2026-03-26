@@ -1,149 +1,108 @@
 import os
 import asyncio
-import logging
 from flask import Flask
 from threading import Thread
-import edge_tts
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
+import edge_tts
 
-# Logging Setup
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# --- CONFIGURATION ---
+TOKEN = os.getenv("BOT_TOKEN")
+# မင်းရဲ့ Channel ID ကို @ နဲ့ သေချာထည့်ပါ (ဥပမာ "@mychannel")
+CHANNEL_ID = "@reeac_99" 
 
-# Flask Server for Render (Port 10000)
+# Flask Server for Render
 app = Flask('')
 @app.route('/')
 def home(): return "Bot is Online"
 def run(): app.run(host='0.0.0.0', port=10000)
 
-# --- CONFIGURATION ---
-# Render Environment Variables ထဲမှာ BOT_TOKEN ကို ထည့်ထားပေးပါ
-TOKEN = os.getenv("BOT_TOKEN")
-# မင်းရဲ့ Channel နာမည်ကို ဒီအောက်မှာ အမှန်ပြင်ပါ (ဥပမာ "@mychannel")
-CHANNEL_ID = "@reeac_99" 
-# ---------------------
+# Conversation States
+JOIN_CHECK, GET_TEXT, SELECT_VOICE = range(3)
 
-LANG, AUTH, TEXT, VOICE = range(4)
-
+# Voices Mapping (Thiha, Nilar - MM / Zaw Zaw, Su Su - EN/Multi)
 VOICES = {
-    "mm": {
-        "Nilar (Female)": "my-MM-NilarNeural",
-        "Poe (Female)": "en-GB-SoniaNeural",
-        "Shwe (Female)": "en-US-EmmaNeural",
-        "Aye (Female)": "en-CA-ClaraNeural",
-        "May (Female)": "en-AU-NatashaNeural",
-        "Thura (Male)": "my-MM-ThihaNeural",
-        "Kyaw (Male)": "en-US-GuyNeural",
-        "Min (Male)": "en-GB-RyanNeural",
-        "Zaw (Male)": "en-AU-WilliamNeural",
-        "Htet (Male)": "en-US-ChristopherNeural"
-    },
-    "en": {
-        "Alice (Female)": "en-US-EmmaNeural",
-        "Sonia (Female)": "en-GB-SoniaNeural",
-        "Clara (Female)": "en-CA-ClaraNeural",
-        "Ava (Female)": "en-US-AvaNeural",
-        "Natasha (Female)": "en-AU-NatashaNeural",
-        "Guy (Male)": "en-US-GuyNeural",
-        "Ryan (Male)": "en-GB-RyanNeural",
-        "Liam (Male)": "en-CA-LiamNeural",
-        "William (Male)": "en-AU-WilliamNeural",
-        "Chris (Male)": "en-US-ChristopherNeural"
-    }
+    "Thiha (Male)": "my-MM-ThihaNeural",
+    "Nilar (Female)": "my-MM-NilarNeural",
+    "Zaw Zaw (Male)": "en-US-GuyNeural",
+    "Su Su (Female)": "en-US-EmmaNeural"
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("မြန်မာစာ 🇲🇲", callback_data='mm'),
-                 InlineKeyboardButton("English 🇺🇸", callback_data='en')]]
-    await update.message.reply_text("Please select your language / ဘာသာစကားရွေးချယ်ပါ-", reply_markup=InlineKeyboardMarkup(keyboard))
-    return LANG
-
-async def lang_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    context.user_data['lang'] = query.data
-    
-    user_id = query.from_user.id
+    user_id = update.effective_user.id
     try:
+        # Check Channel Membership
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            await query.edit_message_text("✅ Verified! Please send the text you want to convert.")
-            return TEXT
-        else: raise Exception()
-    except:
-        keyboard = [[InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_ID.replace('@','')}")],
-                    [InlineKeyboardButton("✅ Joined (အတည်ပြုမည်)", callback_data='check_join')]]
-        await query.edit_message_text(f"You must join our channel {CHANNEL_ID} first!", reply_markup=InlineKeyboardMarkup(keyboard))
-        return AUTH
+        if member.status in ['left', 'kicked']:
+            keyboard = [[InlineKeyboardButton("Join Channel", url=f"https://t.me/{CHANNEL_ID.replace('@','')}")],
+                        [InlineKeyboardButton("I have joined ✅", callback_data="check_join")]]
+            await update.message.reply_text("ရှေ့ဆက်ဖို့ ကျွန်ုပ်တို့၏ Channel ကို အရင် Join ပေးပါ။", reply_markup=InlineKeyboardMarkup(keyboard))
+            return JOIN_CHECK
+        
+        await update.message.reply_text("မင်္ဂလာပါ! အသံပြောင်းလိုသော စာသားကို ရိုက်ထည့်ပေးပါ။")
+        return GET_TEXT
+    except Exception:
+        await update.message.reply_text(f"Error: {CHANNEL_ID} မှာ Bot ကို Admin ခန့်ထားဖို့ လိုအပ်ပါတယ်။")
+        return ConversationHandler.END
 
-async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     user_id = query.from_user.id
-    try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            await query.edit_message_text("🎉 Verified Successfully! Send your text now.")
-            return TEXT
-        else:
-            await query.answer("❌ You haven't joined yet!", show_alert=True)
-            return AUTH
-    except: return AUTH
-
-async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['text'] = update.message.text
-    lang = context.user_data.get('lang', 'mm')
-    buttons = []
-    v_keys = list(VOICES[lang].keys())
-    for i in range(0, len(v_keys), 2):
-        row = [InlineKeyboardButton(v_keys[i], callback_data=v_keys[i])]
-        if i+1 < len(v_keys): row.append(InlineKeyboardButton(v_keys[i+1], callback_data=v_keys[i+1]))
-        buttons.append(row)
-    
-    await update.message.reply_text("👤 Select Voice Character:", reply_markup=InlineKeyboardMarkup(buttons))
-    return VOICE
-
-async def generate_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
     await query.answer()
-    v_name = query.data
-    lang = context.user_data.get('lang', 'mm')
-    text = context.user_data.get('text')
-    v_id = VOICES[lang][v_name]
     
-    msg = await query.edit_message_text(f"⏳ Generating audio with {v_name}...")
-    file_path = f"audio_{query.from_user.id}.mp3"
+    member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+    if member.status not in ['left', 'kicked']:
+        # Join ပြီးတာနဲ့ စာကို ဖျက်ပေးမယ်
+        await query.message.delete()
+        await context.bot.send_message(chat_id=user_id, text="ကျေးဇူးတင်ပါတယ်။ အခု အသံပြောင်းလိုတဲ့ စာသားကို ရိုက်ထည့်နိုင်ပါပြီ။")
+        return GET_TEXT
+    else:
+        await query.message.reply_text("Join မလုပ်ရသေးပါ။ ကျေးဇူးပြု၍ အရင် Join ပါ။")
+        return JOIN_CHECK
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['text_to_convert'] = update.message.text
+    keyboard = [[InlineKeyboardButton(name, callback_data=name)] for name in VOICES.keys()]
+    await update.message.reply_text("အသုံးပြုလိုသော အသံကို ရွေးချယ်ပေးပါ -", reply_markup=InlineKeyboardMarkup(keyboard))
+    return SELECT_VOICE
+
+async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    voice_name = query.data
+    text = context.user_data.get('text_to_convert')
+    await query.answer()
+    
+    msg = await query.edit_message_text("အသံဖိုင် ပြောင်းလဲနေပါသည်... ခဏစောင့်ပါ။")
     
     try:
-        communicate = edge_tts.Communicate(text, v_id)
-        await communicate.save(file_path)
-        await context.bot.send_audio(chat_id=query.message.chat_id, audio=open(file_path, 'rb'), caption=f"🎙 Voice: {v_name}")
+        output_file = f"voice_{query.from_user.id}.mp3"
+        communicate = edge_tts.Communicate(text, VOICES[voice_name])
+        await communicate.save(output_file)
+        
+        await query.message.reply_audio(audio=open(output_file, 'rb'), caption=f"Generated by {voice_name}")
         await msg.delete()
-        os.remove(file_path)
+        os.remove(output_file)
     except Exception as e:
-        logging.error(f"TTS Error: {e}")
-        await query.edit_message_text("❌ Error generating audio. Please try again.")
+        await query.edit_message_text(f"Error: {str(e)}")
     
-    return TEXT
+    return GET_TEXT # နောက်ထပ်စာသား ထပ်ရိုက်နိုင်အောင် ပြန်ထားပေးမယ်
 
 def main():
     Thread(target=run).start()
-    # drop_pending_updates=True က Conflict Error တွေကို ရှင်းပေးပါလိမ့်မယ်
     application = Application.builder().token(TOKEN).build()
-    
+
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[CommandHandler("start", start)],
         states={
-            LANG: [CallbackQueryHandler(lang_choice, pattern='^(mm|en)$')],
-            AUTH: [CallbackQueryHandler(check_join, pattern='^check_join$')],
-            TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_text)],
-            VOICE: [CallbackQueryHandler(generate_audio)]
+            JOIN_CHECK: [CallbackQueryHandler(check_join_callback, pattern="^check_join$")],
+            GET_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)],
+            SELECT_VOICE: [CallbackQueryHandler(handle_voice_selection)]
         },
-        fallbacks=[CommandHandler('start', start)]
+        fallbacks=[CommandHandler("start", start)]
     )
-    
+
     application.add_handler(conv_handler)
-    application.run_polling(drop_pending_updates=True)
+    application.run_polling(drop_pending_updates=True) # Conflict မဖြစ်အောင် စာဟောင်းတွေကို ဖျက်ခိုင်းမယ်
 
 if __name__ == '__main__':
     main()
