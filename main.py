@@ -8,6 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 import google.generativeai as genai
 
 # --- CONFIGURATION ---
+# အစ်ကို့ရဲ့ Render Environment Variable ထဲက နာမည်နဲ့ တိုက်ရိုက်ချိတ်ထားပါတယ်
 TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 CHANNEL_ID = "@reeac_99"
@@ -15,7 +16,7 @@ CHANNEL_ID = "@reeac_99"
 # Gemini Setup
 genai.configure(api_key=GEMINI_KEY)
 
-# Flask Server for Render
+# Flask Server for Render (Keep Alive)
 app = Flask('')
 @app.route('/')
 def home(): return "Gemini TTS Bot is Online"
@@ -83,9 +84,10 @@ async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_T
     msg = await query.edit_message_text(f"⏳ {voice_display_name} ဖြင့် အသံဖန်တီးနေပါသည်...")
 
     try:
+        # Gemini 1.5 Flash Model ကို အသုံးပြုခြင်း
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # Generation Config ကို စနစ်တကျ ပြန်ဖွဲ့စည်းထားခြင်း
+        # အသံထုတ်ယူမည့် Config ကို Dict ပုံစံဖြင့် တိုက်ရိုက်ထည့်သွင်းခြင်း (Version အားလုံးအတွက်)
         response = model.generate_content(
             contents=text,
             generation_config={
@@ -98,6 +100,7 @@ async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_T
             }
         )
 
+        # Audio content ကို ဆွဲထုတ်ပြီး Telegram သို့ ပို့ခြင်း
         if hasattr(response, 'audio_contents') and response.audio_contents:
             audio_data = response.audio_contents[0].data
             audio_file = io.BytesIO(audio_data)
@@ -105,15 +108,21 @@ async def handle_voice_selection(update: Update, context: ContextTypes.DEFAULT_T
             await query.message.reply_audio(audio=audio_file, caption=f"🎙 Gemini Voice: {voice_display_name}")
             await msg.delete()
         else:
-            await query.edit_message_text("Error: Gemini API ကနေ အသံဒေတာ မရရှိပါဘူး။")
+            await query.edit_message_text("Error: Gemini API ကနေ အသံဒေတာ မရရှိပါဘူး။ (Quota သို့မဟုတ် Region ကန့်သတ်ချက် ဖြစ်နိုင်သည်)")
     except Exception as e:
-        await query.edit_message_text(f"Error: {str(e)}\n\n(Render မှာ Clear Build Cache & Deploy လုပ်ထားဖို့ လိုပါမယ်)")
+        # Error တက်ပါက သေချာပြပေးရန်
+        await query.edit_message_text(f"အမှားအယွင်းရှိပါသည်: {str(e)}\n\n(Render မှာ Clear Build Cache & Deploy လုပ်ထားဖို့ လိုပါမယ်)")
     
     return GET_TEXT
 
 def main():
+    # Flask ကို Thread တစ်ခုဖြင့် Run ခြင်း
     Thread(target=run).start()
+    
+    # Bot Application တည်ဆောက်ခြင်း
     application = Application.builder().token(TOKEN).build()
+    
+    # Conversation Handler သတ်မှတ်ခြင်း
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -123,7 +132,10 @@ def main():
         },
         fallbacks=[CommandHandler("start", start)]
     )
+    
     application.add_handler(conv_handler)
+    
+    # Bot စတင်နှိုးခြင်း
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
